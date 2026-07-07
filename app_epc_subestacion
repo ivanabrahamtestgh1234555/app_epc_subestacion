@@ -1,0 +1,139 @@
+import streamlit as st
+import pandas as pd
+
+# Configuración de la página
+st.set_page_config(page_title="Calculador EPC Subestación", layout="wide")
+
+st.title("⚡ Calculador de Presupuesto EPC para Subestaciones Eléctricas")
+st.write("Herramienta de estimación de HH y Costos basada en la base de datos de Saravia.")
+
+# --- BASE DE DATOS DE RENDIMIENTOS (Extraídos directamente del documento) ---
+db_civiles = {
+    "Casetas de control (Hormigón Armado) [m2]": 471.21,
+    "Fundación desconectador de base sin puesta a tierra [c/u]": 471.21,
+    "Fundación desconectador de base con puesta a tierra [c/u]": 342.75,
+    "Fundación interruptor de poder [c/u]": 136.62,
+    "Fundación transformadores de corriente [c/u]": 95.03,
+    "Fundación transformadores de potencial [c/u]": 111.34,
+    "Fundación pararrayos [c/u]": 107.55,
+    "Fundación aislador de pedestales [c/u]": 514.61,
+    "Fundación pilares marcos de línea [c/u]": 277.51,
+    "Fundación de pilares marco de barras [c/u]": 705.72,
+    "Fundación de pilares mixtos [c/u]": 705.72,
+}
+
+db_equipos = {
+    "Montaje Transformador de Poder 15 MVA [c/u]": 1142.36,
+    "Montaje Transformador de Poder 7.5 MVA [c/u]": 1067.36,
+    "Montaje Transformador de Poder 5 MVA [c/u]": 750.04,
+    "Montaje Transformador de Poder 2.500 KVA [c/u]": 525.03,
+    "Montaje Desconectador Tripolar Clase 220kV SPT [c/u]": 308.09,
+    "Montaje Desconectador Tripolar Clase 220kV CPT [c/u]": 394.64,
+    "Montaje de Interruptor Trifásico en SF6 Clase 220kV [c/u]": 498.49,
+    "Montaje de Transformador de Corriente Clase 220 kV [c/u]": 53.08,
+    "Montaje de Transformador de Potencial Clase 220kV [c/u]": 36.93,
+    "Montaje de Pararrayos c/contador descarga Clase 220 kV [c/u]": 42.69,
+    "Montaje de Aislador de Pedestal Clase 220kV [c/u]": 50.78,
+    "Montaje de Trampa de Onda Clase 220kV [c/u]": 56.54,
+    "Montaje de Condensador Acoplamiento Clase 220kV [c/u]": 36.93,
+}
+
+db_estructuras = {
+    "Montaje de Estructuras Altas en Subestación [TON]": 69.23,
+    "Montaje Estructuras Soporte Equipos Primarios [TON]": 86.55,
+    "Montaje Conductor de Barra en Subestación [M]": 1.27,
+}
+
+# --- BARRA LATERAL: PARÁMETROS ECONÓMICOS ---
+st.sidebar.header("💰 Parámetros Económicos EPC")
+costo_hh = st.sidebar.number_input("Costo Mano de Obra Directa (USD / HH)", min_value=1.0, value=35.0, step=1.0)
+porcentaje_ingenieria = st.sidebar.slider("Ingeniería (E) (% del costo construcción)", 0, 25, 8) / 100
+costo_suministros_p = st.sidebar.number_input("Costo Estimado de Equipos y Suministros (P) [USD]", min_value=0, value=1500000)
+porcentaje_contingencia = st.sidebar.slider("Contingencias (%)", 0, 30, 10) / 100
+
+# --- PESTAÑAS DE ENTRADA DE DATOS ---
+tab1, tab2, tab3 = st.tabs(["🏗️ Obras Civiles (Soportes)", "🔌 Montaje de Equipos", "📊 Reporte EPC Final"])
+
+quantities_civiles = {}
+quantities_equipos = {}
+quantities_estructuras = {}
+
+with tab1:
+    st.subheader("Cuantificación de Obras Civiles Especiales")
+    st.write("Ingrese las cantidades requeridas para las fundaciones de los equipos de patio:")
+    
+    col1, col2 = st.columns(2)
+    for i, (item, value) in enumerate(db_civiles.items()):
+        with col1 if i % 2 == 0 else col2:
+            quantities_civiles[item] = st.number_input(f"{item} (HH unitaria: {value})", min_value=0, value=0, key=f"civ_{item}")
+
+with tab2:
+    st.subheader("Montaje de Equipos Eléctricos y Estructuras")
+    st.write("Ingrese las unidades físicas de equipos de patio de alta tensión (220kV) y estructuras:")
+    
+    st.markdown("#### Equipos Primarios")
+    col3, col4 = st.columns(2)
+    for i, (item, value) in enumerate(db_equipos.items()):
+        with col3 if i % 2 == 0 else col4:
+            quantities_equipos[item] = st.number_input(f"{item} (HH unitaria: {value})", min_value=0, value=0, key=f"eq_{item}")
+            
+    st.markdown("#### Estructuras y Barras")
+    col5, col6 = st.columns(2)
+    for i, (item, value) in enumerate(db_estructuras.items()):
+        with col5 if i % 2 == 0 else col6:
+            quantities_estructuras[item] = st.number_input(f"{item} (HH unitaria: {value})", min_value=0, value=0, key=f"est_{item}")
+
+# --- CÁLCULOS ---
+total_hh_civiles = sum(quantities_civiles[item] * db_civiles[item] for item in db_civiles)
+total_hh_equipos = sum(quantities_equipos[item] * db_equipos[item] for item in db_equipos)
+total_hh_estructuras = sum(quantities_estructuras[item] * db_estructuras[item] for item in db_estructuras)
+
+total_hh_construccion = total_hh_civiles + total_hh_equipos + total_hh_estructuras
+costo_construccion_c = total_hh_construccion * costo_hh
+
+costo_ingenieria_e = costo_construccion_c * porcentaje_ingenieria
+subtotal_epc = costo_ingenieria_e + costo_suministros_p + costo_construccion_c
+monto_contingencia = subtotal_epc * porcentaje_contingencia
+total_general_epc = subtotal_epc + monto_contingencia
+
+# --- PESTAÑA 3: REPORTE ---
+with tab3:
+    st.subheader("📈 Resumen del Presupuesto EPC de la Subestación")
+    
+    # KPI Cards
+    kpi1, kpi2, kpi3 = st.columns(3)
+    kpi1.metric("Total HH Estimadas", f"{total_hh_construccion:,.2f} HH")
+    kpi2.metric("Costo Construcción (C)", f"USD {costo_construccion_c:,.2f}")
+    kpi3.metric("PRESUPUESTO TOTAL EPC", f"USD {total_general_epc:,.2f}")
+    
+    st.markdown("---")
+    
+    # Desglose en tabla
+    data_desglose = {
+        "Fase EPC / Concepto": [
+            "Ingeniería (E)",
+            "Procura / Suministros (P)",
+            "Construcción (C) - Obras Civiles",
+            "Construcción (C) - Montaje de Equipos",
+            "Construcción (C) - Estructuras y Barras",
+            "Contingencias",
+            "TOTAL ESTIMADO EPC"
+        ],
+        "HH Totales": [
+            "-", "-", f"{total_hh_civiles:,.1f}", f"{total_hh_equipos:,.1f}", f"{total_hh_estructuras:,.1f}", "-", f"{total_hh_construccion:,.1f}"
+        ],
+        "Costo Estimado (USD)": [
+            costo_ingenieria_e,
+            costo_suministros_p,
+            total_hh_civiles * costo_hh,
+            total_hh_equipos * costo_hh,
+            total_hh_estructuras * costo_hh,
+            monto_contingencia,
+            total_general_epc
+        ]
+    }
+    
+    df_reporte = pd.DataFrame(data_desglose)
+    st.table(df_reporte.style.format({"Costo Estimado (USD)": "USD {:,.2f}"}))
+    
+    st.info("💡 Nota: Los rendimientos unitarios aplicados corresponden de manera exacta a los registros del estándar de Saravia indicados en el documento base.")
